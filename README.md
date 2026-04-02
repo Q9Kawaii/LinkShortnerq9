@@ -1,5 +1,7 @@
 # 🔗 QuickLink - Modern URL Shortener
-![QuickLink Preview](screenshot.png)
+<p align="center">
+  <img src="screenshot.png" alt="QuickLink Preview" width="600">
+</p>
 
 QuickLink is a lightweight, high-performance link shortening tool designed for speed and simplicity. Built as a serverless application, it leverages **Firebase Firestore** for real-time data management and **GitHub Actions** for automated deployment.
 
