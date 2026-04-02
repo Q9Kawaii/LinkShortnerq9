@@ -77,74 +77,101 @@
     </footer>
 
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getFirestore, doc, setDoc, getDoc, query, where, getDocs, writeBatch, collection } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyCYvvaSJHKqkOaSUr82zEC23KtQKESp1so",
-            authDomain: "q9linkshortner.firebaseapp.com",
-            projectId: "q9linkshortner",
-            storageBucket: "q9linkshortner.firebasestorage.app",
-            messagingSenderId: "437108585590",
-            appId: "1:437108585590:web:fb73582828a0b42c385b57",
-            measurementId: "G-GDZSCLW80E"
-        };
+    const firebaseConfig = {
+        apiKey: "AIzaSyCYvvaSJHKqkOaSUr82zEC23KtQKESp1so",
+        authDomain: "q9linkshortner.firebaseapp.com",
+        projectId: "q9linkshortner",
+        storageBucket: "q9linkshortner.firebasestorage.app",
+        messagingSenderId: "437108585590",
+        appId: "1:437108585590:web:fb73582828a0b42c385b57",
+        measurementId: "G-GDZSCLW80E"
+    };
 
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
 
-        // REDIRECT LOGIC
-        const pathId = window.location.hash.substring(1);
-        if (pathId) {
-            const docRef = doc(db, "links", pathId);
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                window.location.href = docSnap.data().longUrl;
-            }
+    // --- LAZY DELETION LOGIC ---
+    async function cleanupExpiredLinks() {
+        try {
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+            // Find links older than 30 days
+            const q = query(collection(db, "links"), where("createdAt", "<", thirtyDaysAgo));
+            const querySnapshot = await getDocs(q);
+            
+            if (querySnapshot.empty) return;
+
+            const batch = writeBatch(db);
+            querySnapshot.forEach((doc) => {
+                batch.delete(doc.ref);
+            });
+            
+            await batch.commit();
+            console.log(`Lazy Cleanup: Deleted ${querySnapshot.size} expired links.`);
+        } catch (e) {
+            // We fail silently so the user doesn't see an error if cleanup fails
+            console.error("Cleanup error:", e);
+        }
+    }
+
+    // Run cleanup automatically on every page load
+    cleanupExpiredLinks();
+
+    // --- REDIRECT LOGIC ---
+    const pathId = window.location.hash.substring(1);
+    if (pathId) {
+        const docRef = doc(db, "links", pathId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            window.location.href = docSnap.data().longUrl;
+        }
+    }
+
+    // --- SHORTEN LOGIC ---
+    document.getElementById('shortenBtn').onclick = async () => {
+        let longUrl = document.getElementById('longUrl').value.trim();
+        if(!longUrl) return alert("Enter a URL first!");
+        
+        if (!/^https?:\/\//i.test(longUrl)) {
+            longUrl = 'https://' + longUrl;
         }
 
-        // SHORTEN LOGIC
-        document.getElementById('shortenBtn').onclick = async () => {
-            let longUrl = document.getElementById('longUrl').value.trim();
-            if(!longUrl) return alert("Enter a URL first!");
-            
-            // Add https if missing
-            if (!/^https?:\/\//i.test(longUrl)) {
-                longUrl = 'https://' + longUrl;
-            }
-
-            const shortId = Math.random().toString(36).substring(2, 7);
-            
-            try {
-                await setDoc(doc(db, "links", shortId), {
-                    longUrl: longUrl,
-                    createdAt: new Date()
-                });
-
-                const finalUrl = window.location.origin + window.location.pathname + "#" + shortId;
-                document.getElementById('shortUrl').innerText = finalUrl;
-                document.getElementById('resultArea').classList.remove('hidden');
-                document.getElementById('shortenBtn').innerText = "Shortened!";
-                setTimeout(() => { document.getElementById('shortenBtn').innerText = "Shorten Link"; }, 2000);
-            } catch (e) {
-                console.error(e);
-                alert("Database Error! Check your Firestore rules.");
-            }
-        };
-
-        // COPY FUNCTION
-        window.copyLink = () => {
-            const linkText = document.getElementById('shortUrl').innerText;
-            navigator.clipboard.writeText(linkText).then(() => {
-                const copyBtn = document.getElementById('copyBtn');
-                copyBtn.innerText = "Copied!";
-                copyBtn.classList.replace('bg-gray-700', 'bg-blue-600');
-                setTimeout(() => {
-                    copyBtn.innerText = "Copy Link";
-                    copyBtn.classList.replace('bg-blue-600', 'bg-gray-700');
-                }, 2000);
+        const shortId = Math.random().toString(36).substring(2, 7);
+        
+        try {
+            await setDoc(doc(db, "links", shortId), {
+                longUrl: longUrl,
+                createdAt: new Date()
             });
-        };
-    </script>
+
+            const finalUrl = window.location.origin + window.location.pathname + "#" + shortId;
+            document.getElementById('shortUrl').innerText = finalUrl;
+            document.getElementById('resultArea').classList.remove('hidden');
+            document.getElementById('shortenBtn').innerText = "Shortened!";
+            setTimeout(() => { document.getElementById('shortenBtn').innerText = "Shorten Link"; }, 2000);
+        } catch (e) {
+            console.error(e);
+            alert("Database Error! Check your Firestore rules.");
+        }
+    };
+
+    // --- COPY FUNCTION ---
+    window.copyLink = () => {
+        const linkText = document.getElementById('shortUrl').innerText;
+        navigator.clipboard.writeText(linkText).then(() => {
+            const copyBtn = document.getElementById('copyBtn');
+            copyBtn.innerText = "Copied!";
+            copyBtn.classList.replace('bg-gray-700', 'bg-blue-600');
+            setTimeout(() => {
+                copyBtn.innerText = "Copy Link";
+                copyBtn.classList.replace('bg-blue-600', 'bg-gray-700');
+            }, 2000);
+        });
+    };
+</script>
 </body>
 </html>
